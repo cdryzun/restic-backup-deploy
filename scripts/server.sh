@@ -21,6 +21,30 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 error()   { echo -e "${RED}[ERR]${RESET}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 
+# ── 交互输入（支持管道执行）──────────────────────────────────────────────────
+ask() {
+  local prompt="$1"
+  local var="$2"
+  local hide_input="${3:-0}"
+
+  if [[ "$hide_input" == "1" ]]; then
+    # 隐藏输入（密码）
+    if [[ -t 0 ]]; then
+      read -e -s -rp "$prompt" "$var"
+    else
+      read -e -s -rp "$prompt" "$var" </dev/tty
+    fi
+    echo ""
+  else
+    # 正常输入
+    if [[ -t 0 ]]; then
+      read -e -rp "$prompt" "$var"
+    else
+      read -e -rp "$prompt" "$var" </dev/tty
+    fi
+  fi
+}
+
 # ── 前置检查 ──────────────────────────────────────────────────────────────────
 check_deps() {
   command -v docker &>/dev/null || die "未找到 docker，请先安装"
@@ -128,7 +152,7 @@ cmd_add_user() {
   # 用户名
   local username="$opt_username"
   while [[ -z "$username" ]]; do
-    read -e -rp "用户名: " username
+    ask "用户名: " username
   done
 
   # 检查用户是否已存在
@@ -148,11 +172,9 @@ cmd_add_user() {
   local password="$opt_password"
   if [[ -z "$password" ]]; then
     while true; do
-      read -e -s -rp "密码: " password
-      echo ""
+      ask "密码: " password 1
       local password_confirm
-      read -e -s -rp "确认密码: " password_confirm
-      echo ""
+      ask "确认密码: " password_confirm 1
       if [[ "$password" == "$password_confirm" ]]; then
         break
       else
@@ -192,7 +214,7 @@ cmd_del_user() {
 
   local username="$opt_username"
   while [[ -z "$username" ]]; do
-    read -e -rp "请输入要删除的用户名: " username
+    ask "请输入要删除的用户名: " username
   done
 
   if ! docker exec "$CONTAINER" grep -q "^${username}:" /data/.htpasswd 2>/dev/null; then
@@ -200,7 +222,7 @@ cmd_del_user() {
   fi
 
   if [[ "$opt_yes" != "1" ]]; then
-    read -e -rp "确认删除用户 '${username}'？[y/N] " confirm
+    ask "确认删除用户 '${username}'？[y/N] " confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
   fi
 
@@ -277,14 +299,14 @@ main_menu() {
     echo "  9) 磁盘占用"
     echo "  0) 退出"
     echo ""
-    read -e -rp "请输入选项 [0-9]: " choice
+    ask "请输入选项 [0-9]: " choice
 
     case "$choice" in
       1) cmd_up ;;
       2) cmd_up --with-monitoring ;;
       3) cmd_down ;;
       4) cmd_restart ;;
-      5) read -e -rp "显示最近多少行日志？[50]: " n; cmd_logs "${n:-50}" ;;
+      5) ask "显示最近多少行日志？[50]: " n; cmd_logs "${n:-50}" ;;
       6) cmd_list_users ;;
       7) cmd_add_user ;;
       8) cmd_del_user ;;
@@ -294,7 +316,7 @@ main_menu() {
     esac
 
     echo ""
-    read -e -rp "按 Enter 继续..." _
+    ask "按 Enter 继续..." _
   done
 }
 

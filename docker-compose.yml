@@ -14,15 +14,15 @@ services:
       - ./certs:/certs:ro
     ports:
       - "${RESTIC_PORT:-8000}:8000"
-    # 使用 shell 判断 TLS 是否启用，避免 https 时 wget http:// 失败
     healthcheck:
       test:
         - "CMD-SHELL"
         - |
           if echo "$${OPTIONS}" | grep -q -- '--tls'; then
-            wget -qO- --no-check-certificate https://localhost:8000/ > /dev/null 2>&1
+            wget --spider --no-check-certificate https://localhost:8000/ 2>&1 | grep -q "remote file exists"
           else
-            wget -qO- http://localhost:8000/ > /dev/null 2>&1
+            wget --spider http://localhost:8000/ 2>&1 | grep -q "remote file exists" || \
+            wget --spider http://localhost:8000/ 2>&1 | grep -q "401 Unauthorized"
           fi
       interval: 30s
       timeout: 10s
