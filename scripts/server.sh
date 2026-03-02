@@ -109,12 +109,12 @@ cmd_add_user() {
     fi
   fi
 
-  # 使用 bcrypt
-  docker exec -it "$CONTAINER" htpasswd -B \
-    ${docker exec "$CONTAINER" test -f /data/.htpasswd 2>/dev/null && echo "" || echo "-c"} \
-    /data/.htpasswd "$username" 2>/dev/null || \
-  docker exec -it "$CONTAINER" sh -c \
-    "htpasswd -B /data/.htpasswd '$username' 2>/dev/null || htpasswd -Bc /data/.htpasswd '$username'"
+  # 使用 bcrypt（根据文件是否存在决定是否加 -c 创建）
+  local htpasswd_flag="-B"
+  if ! docker exec "$CONTAINER" test -f /data/.htpasswd 2>/dev/null; then
+    htpasswd_flag="-Bc"
+  fi
+  docker exec -it "$CONTAINER" htpasswd "$htpasswd_flag" /data/.htpasswd "$username"
 
   success "用户 '${username}' 已添加/更新"
 

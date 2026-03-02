@@ -3,8 +3,10 @@ services:
     image: restic/rest-server:latest
     container_name: restic-rest-server
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - OPTIONS=--prometheus${TLS_ENABLED:+ --tls} ${EXTRA_OPTIONS:-}
       - PASSWORD_FILE=/data/.htpasswd
     volumes:
       - ./data:/data
