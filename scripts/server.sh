@@ -128,7 +128,7 @@ cmd_add_user() {
   # 用户名
   local username="$opt_username"
   while [[ -z "$username" ]]; do
-    read -rp "用户名: " username
+    read -e -rp "用户名: " username
   done
 
   # 检查用户是否已存在
@@ -148,10 +148,10 @@ cmd_add_user() {
   local password="$opt_password"
   if [[ -z "$password" ]]; then
     while true; do
-      read -s -rp "密码: " password
+      read -e -s -rp "密码: " password
       echo ""
       local password_confirm
-      read -s -rp "确认密码: " password_confirm
+      read -e -s -rp "确认密码: " password_confirm
       echo ""
       if [[ "$password" == "$password_confirm" ]]; then
         break
@@ -161,9 +161,9 @@ cmd_add_user() {
     done
   fi
 
-  # 通过 stdin 传入密码，避免 -it 依赖
-  docker exec -i "$CONTAINER" \
-    sh -c "echo '${password}' | htpasswd ${htpasswd_flag} -i /data/.htpasswd '${username}'"
+  # 通过 printf + stdin 传入密码，避免 shell 注入和进程列表泄漏
+  printf '%s\n' "$password" | docker exec -i "$CONTAINER" \
+    htpasswd "$htpasswd_flag" -i /data/.htpasswd "$username"
 
   success "用户 '${username}' 已添加/更新"
 
@@ -192,7 +192,7 @@ cmd_del_user() {
 
   local username="$opt_username"
   while [[ -z "$username" ]]; do
-    read -rp "请输入要删除的用户名: " username
+    read -e -rp "请输入要删除的用户名: " username
   done
 
   if ! docker exec "$CONTAINER" grep -q "^${username}:" /data/.htpasswd 2>/dev/null; then
@@ -200,7 +200,7 @@ cmd_del_user() {
   fi
 
   if [[ "$opt_yes" != "1" ]]; then
-    read -rp "确认删除用户 '${username}'？[y/N] " confirm
+    read -e -rp "确认删除用户 '${username}'？[y/N] " confirm
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
   fi
 
@@ -277,14 +277,14 @@ main_menu() {
     echo "  9) 磁盘占用"
     echo "  0) 退出"
     echo ""
-    read -rp "请输入选项 [0-9]: " choice
+    read -e -rp "请输入选项 [0-9]: " choice
 
     case "$choice" in
       1) cmd_up ;;
       2) cmd_up --with-monitoring ;;
       3) cmd_down ;;
       4) cmd_restart ;;
-      5) read -rp "显示最近多少行日志？[50]: " n; cmd_logs "${n:-50}" ;;
+      5) read -e -rp "显示最近多少行日志？[50]: " n; cmd_logs "${n:-50}" ;;
       6) cmd_list_users ;;
       7) cmd_add_user ;;
       8) cmd_del_user ;;
@@ -294,7 +294,7 @@ main_menu() {
     esac
 
     echo ""
-    read -rp "按 Enter 继续..." _
+    read -e -rp "按 Enter 继续..." _
   done
 }
 

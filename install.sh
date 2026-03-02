@@ -9,6 +9,7 @@ set -euo pipefail
 REPO="cdryzun/restic-backup-deploy"
 BRANCH="main"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+install_dir=""  # 全局变量
 
 # ── 颜色 ──────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'

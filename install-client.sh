@@ -101,18 +101,23 @@ install_restic() {
     *)             die "不支持的架构: $(uname -m)" ;;
   esac
 
-  # 获取最新版本
+  # 获取最新版本（兼容 macOS）
   info "获取最新版本..."
-  latest_url="https://github.com/restic/restic/releases/latest"
+  local version
   if [[ "$DOWNLOADER" == "curl" ]]; then
-    url=$(curl -fsSL -o /dev/null -w "%{url_effective}" "$latest_url" | grep -oP 'tag/v\K.*')
+    version=$(curl -fsSL -o /dev/null -w "%{url_effective}" "$latest_url" | sed 's|.*/tag/v||')
   else
-    url=$(wget -qO- "$latest_url" 2>&1 | grep -oP 'tag/v\K.*' | head -1)
+    version=$(wget -qO- "$latest_url" 2>&1 | grep -o 'tag/v[0-9.]*' | head -1 | sed 's|tag/v||')
   fi
 
-  local download_url="https://github.com/restic/restic/releases/download/v${url}/restic_${url}_${os}_${arch}.bz2"
+  if [[ -z "$version" ]]; then
+    warn "无法获取最新版本，使用 0.17.3"
+    version="0.17.3"
+  fi
 
-  info "下载 restic v${url} (${os}/${arch})..."
+  local download_url="https://github.com/restic/restic/releases/download/v${version}/restic_${version}_${os}_${arch}.bz2"
+
+  info "下载 restic v${version} (${os}/${arch})..."
   local tmp_file="/tmp/restic.bz2"
 
   case "$DOWNLOADER" in
@@ -219,9 +224,26 @@ config_wizard() {
   echo ""
   ask "服务端地址 (如 http://backup.example.com:8000): " server_url
   ask "用户名: " username
-  ask "HTTP 密码: " http_password
+
+  # HTTP 密码隐藏输入
+  echo -n "HTTP 密码: "
+  if [[ -t 0 ]]; then
+    read -e -s http_password
+  else
+    read -e -s http_password </dev/tty
+  fi
+  echo ""
+
   ask "仓库名称 (如 myrepo): " repo_path
-  ask "仓库加密密码: " repo_password
+
+  # 仓库加密密码隐藏输入
+  echo -n "仓库加密密码: "
+  if [[ -t 0 ]]; then
+    read -e -s repo_password
+  else
+    read -e -s repo_password </dev/tty
+  fi
+  echo ""
 
   echo ""
   info "测试连接..."
