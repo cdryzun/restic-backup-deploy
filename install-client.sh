@@ -241,7 +241,7 @@ config_wizard() {
   # 测试服务端连通性（HEAD 请求到根路径）
   local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-    -u "${username}:${http_password}" --head "${server_url%/}/" 2>&1) || true
+    -u "${username}:${http_password}" --head "${server_url%/}/" 2>/dev/null) || true
 
   case "$http_code" in
     200|401|403|404|405)
@@ -310,7 +310,11 @@ config_wizard() {
         info "稍后可手动备份："
         echo "  ${INSTALL_PATH} backup --path /your/data"
       fi
-    fi
+    else
+      echo ""
+      warn "仓库初始化失败（可能已存在同名仓库）"
+      info "若仓库已存在，可直接使用："
+      echo "  ${INSTALL_PATH} init  # 重新初始化或选择已有仓库"
   else
     info "稍后可手动初始化："
     echo "  ${INSTALL_PATH} init"

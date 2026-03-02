@@ -28,7 +28,10 @@ load_config() {
 }
 
 save_config() {
-  cat > "$CONFIG_FILE" <<EOF
+  local tmp_file
+  tmp_file=$(mktemp "${CONFIG_FILE}.XXXXXX")
+  chmod 600 "$tmp_file"
+  cat > "$tmp_file" <<EOF
 # restic 客户端配置（由 client.sh 自动生成）
 # 生成时间: $(date '+%Y-%m-%d %H:%M:%S')
 
@@ -38,7 +41,7 @@ RESTIC_SERVER_URL="${RESTIC_SERVER_URL:-}"
 RESTIC_USERNAME="${RESTIC_USERNAME:-}"
 LAST_BACKUP_PATH="${LAST_BACKUP_PATH:-}"
 EOF
-  chmod 600 "$CONFIG_FILE"
+  mv "$tmp_file" "$CONFIG_FILE"
   success "配置已保存到 $CONFIG_FILE"
 }
 
@@ -62,7 +65,10 @@ check_deps() {
 
 check_config() {
   if [[ -z "${RESTIC_REPOSITORY:-}" ]]; then
-    warn "尚未配置仓库，请先执行「初始化仓库」"
+    error "尚未配置仓库，请先执行初始化："
+    echo ""
+    echo "  $0 init"
+    echo ""
     return 1
   fi
   return 0
@@ -73,7 +79,7 @@ test_connection() {
   local url="$1"
   info "测试服务端连通性..."
   local http_code
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -I "${url%/}/" 2>&1) || true
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -I "${url%/}/" 2>/dev/null) || true
   case "$http_code" in
     200|401|403|404|405)
       success "服务端连接正常 (HTTP $http_code)"
@@ -230,8 +236,26 @@ menu_init() {
     export RESTIC_REPOSITORY RESTIC_PASSWORD
     save_config
   else
-    error "初始化失败，请检查服务端状态和认证信息"
-    return 1
+    echo ""
+    warn "restic init 失败（仓库可能已存在）"
+    echo ""
+    echo -e "  若仓库已存在，是否直接使用该仓库并保存配置？"
+    local use_existing="n"
+    if [[ "$opt_yes" != "1" ]]; then
+      read -rp "  使用现有仓库？[y/N] " use_existing
+    fi
+    if [[ "$use_existing" =~ ^[Yy]$ ]]; then
+      RESTIC_REPOSITORY="$repo_url"
+      RESTIC_PASSWORD="$repo_password"
+      RESTIC_SERVER_URL="$server_url"
+      RESTIC_USERNAME="$username"
+      export RESTIC_REPOSITORY RESTIC_PASSWORD
+      save_config
+      info "已保存现有仓库配置，可尝试执行 snapshots 验证连接"
+    else
+      error "初始化失败，请检查服务端状态和认证信息"
+      return 1
+    fi
   fi
 }
 
