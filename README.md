@@ -15,7 +15,25 @@
 
 ## 快速开始
 
-### 服务端部署
+### 一键安装（推荐）
+
+**服务端（需要 Docker）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cdryzun/restic-backup-deploy/main/install.sh | bash
+```
+
+**客户端（需要 restic）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cdryzun/restic-backup-deploy/main/install-client.sh | bash
+```
+
+> 安装脚本会自动引导完成依赖检查、配置和初始化。
+
+---
+
+### 手动部署（服务端）
 
 ```bash
 # 1. 复制并编辑配置
@@ -41,6 +59,16 @@ vim .env
 | Grafana     | http://localhost:3000    | 监控（可选）       |
 
 ### 客户端使用
+
+**一键安装（推荐）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cdryzun/restic-backup-deploy/main/install-client.sh | bash
+```
+
+> 脚本会自动检测并安装 restic（如未安装），引导完成仓库配置。
+
+**手动使用：**
 
 > 前提：客户端机器已安装 [restic](https://restic.net/downloads/)
 
@@ -73,6 +101,8 @@ vim .env
 
 ```
 restic-backup-deploy/
+├── install.sh                # 服务端快速安装脚本
+├── install-client.sh         # 客户端快速安装脚本
 ├── docker-compose.yml        # 服务编排
 ├── .env.example              # 环境变量模板
 ├── config/
