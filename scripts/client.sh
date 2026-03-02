@@ -182,10 +182,10 @@ menu_init() {
   prompt_input repo_path "仓库路径（相对于服务端根目录）" "$default_repo" 1
   repo_path="${repo_path#/}"
 
-  # 构建仓库 URL
+  # 构建仓库 URL（restic REST 后端需要 rest: 前缀）
   local proto="${server_url%%://*}"
   local host_path="${server_url#*://}"
-  local repo_url="${proto}://${username}:${http_password}@${host_path}/${repo_path}"
+  local repo_url="rest:${proto}://${username}:${http_password}@${host_path}/${repo_path}"
 
   # 连通性测试
   test_connection "$server_url" || return 1
@@ -566,7 +566,7 @@ menu_edit_config() {
   if [[ -n "$http_pass" ]]; then
     local proto="${RESTIC_SERVER_URL%%://*}"
     local host_path="${RESTIC_SERVER_URL#*://}"
-    RESTIC_REPOSITORY="${proto}://${RESTIC_USERNAME}:${http_pass}@${host_path}/${repo_path}"
+    RESTIC_REPOSITORY="rest:${proto}://${RESTIC_USERNAME}:${http_pass}@${host_path}/${repo_path}"
   fi
 
   read -rsp "仓库加密密码（直接回车跳过）: " new_repo_pass
