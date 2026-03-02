@@ -20,6 +20,20 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 error()   { echo -e "${RED}[ERR]${RESET}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 
+# ── 交互输入（支持管道执行）──────────────────────────────────────────────────
+ask() {
+  local prompt="$1"
+  local var="$2"
+
+  if [[ -t 0 ]]; then
+    # 标准终端输入
+    read -rp "$prompt" "$var"
+  else
+    # 管道执行时从 /dev/tty 读取
+    read -rp "$prompt" "$var" </dev/tty
+  fi
+}
+
 # ── 横幅 ──────────────────────────────────────────────────────────────────────
 show_banner() {
   echo -e "${BOLD}${BLUE}"
@@ -80,7 +94,7 @@ select_install_dir() {
   echo -e "${BOLD}请选择安装目录：${RESET}"
   echo "  默认: ${default_dir}"
   echo ""
-  read -rp "安装目录 [回车使用默认]: " install_dir
+  ask "安装目录 [回车使用默认]: " install_dir
   install_dir="${install_dir:-$default_dir}"
 
   # 转换为绝对路径
@@ -144,7 +158,7 @@ config_wizard() {
   echo ""
 
   # 端口配置
-  read -rp "rest-server 端口 [8000]: " restic_port
+  ask "rest-server 端口 [8000]: " restic_port
   restic_port="${restic_port:-8000}"
 
   # 安全选项
@@ -153,7 +167,7 @@ config_wizard() {
   echo "  1) 标准模式（允许备份和删除）"
   echo "  2) 仅追加模式（防止勒索软件删除备份，推荐）"
   echo ""
-  read -rp "选择模式 [1-2，默认 1]: " mode_choice
+  ask "选择模式 [1-2，默认 1]: " mode_choice
   mode_choice="${mode_choice:-1}"
 
   local options="--prometheus"
@@ -164,7 +178,7 @@ config_wizard() {
   echo -e "${BOLD}TLS 配置：${RESET}"
   echo "  生产环境强烈建议启用 TLS"
   echo ""
-  read -rp "是否启用 TLS？[y/N]: " enable_tls
+  ask "是否启用 TLS？[y/N]: " enable_tls
   if [[ "$enable_tls" =~ ^[Yy]$ ]]; then
     options="$options --tls"
     warn "请手动将证书放置到 ${install_dir}/certs/ 目录："
@@ -193,7 +207,7 @@ start_service() {
   echo -e "${BOLD}${BLUE}═════════════════════════════════════════════════${RESET}"
   echo ""
 
-  read -rp "是否立即启动 rest-server？[Y/n]: " start_now
+  ask "是否立即启动 rest-server？[Y/n]: " start_now
   if [[ ! "$start_now" =~ ^[Nn]$ ]]; then
     info "启动 rest-server..."
     ./scripts/server.sh up
@@ -212,7 +226,7 @@ add_user() {
   cd "$install_dir"
 
   echo ""
-  read -rp "是否立即添加备份用户？[Y/n]: " add_now
+  ask "是否立即添加备份用户？[Y/n]: " add_now
   if [[ ! "$add_now" =~ ^[Nn]$ ]]; then
     ./scripts/server.sh add-user
   else

@@ -20,6 +20,20 @@ warn()    { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 error()   { echo -e "${RED}[ERR]${RESET}  $*" >&2; }
 die()     { error "$*"; exit 1; }
 
+# ── 交互输入（支持管道执行）──────────────────────────────────────────────────
+ask() {
+  local prompt="$1"
+  local var="$2"
+
+  if [[ -t 0 ]]; then
+    # 标准终端输入
+    read -rp "$prompt" "$var"
+  else
+    # 管道执行时从 /dev/tty 读取
+    read -rp "$prompt" "$var" </dev/tty
+  fi
+}
+
 # ── 横幅 ──────────────────────────────────────────────────────────────────────
 show_banner() {
   echo -e "${BOLD}${BLUE}"
@@ -53,7 +67,7 @@ check_deps() {
     echo "  其他         : https://restic.net/downloads/"
     echo ""
 
-    read -rp "是否自动安装 restic？[y/N]: " auto_install
+    ask "是否自动安装 restic？[y/N]: " auto_install
     if [[ "$auto_install" =~ ^[Yy]$ ]]; then
       install_restic
     else
@@ -143,7 +157,7 @@ select_install_method() {
   echo "     便携式，适合临时使用"
   echo ""
 
-  read -rp "选择 [1-3，默认 1]: " method
+  ask "选择 [1-3，默认 1]: " method
   method="${method:-1}"
 
   case "$method" in
@@ -197,17 +211,17 @@ config_wizard() {
   echo -e "${BOLD}${BLUE}═════════════════════════════════════════════════${RESET}"
   echo ""
 
-  read -rp "是否立即配置备份仓库？[Y/n]: " do_config
+  ask "是否立即配置备份仓库？[Y/n]: " do_config
   if [[ "$do_config" =~ ^[Nn]$ ]]; then
     return
   fi
 
   echo ""
-  read -rp "服务端地址 (如 http://backup.example.com:8000): " server_url
-  read -rp "用户名: " username
-  read -rp "HTTP 密码: " http_password
-  read -rp "仓库名称 (如 myrepo): " repo_path
-  read -rp "仓库加密密码: " repo_password
+  ask "服务端地址 (如 http://backup.example.com:8000): " server_url
+  ask "用户名: " username
+  ask "HTTP 密码: " http_password
+  ask "仓库名称 (如 myrepo): " repo_path
+  ask "仓库加密密码: " repo_password
 
   echo ""
   info "测试连接..."
@@ -218,7 +232,7 @@ config_wizard() {
   fi
 
   echo ""
-  read -rp "是否初始化仓库？[Y/n]: " do_init
+  ask "是否初始化仓库？[Y/n]: " do_init
   if [[ ! "$do_init" =~ ^[Nn]$ ]]; then
     "${INSTALL_PATH}" init \
       --server-url "$server_url" \
