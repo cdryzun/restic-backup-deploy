@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # server.sh — restic-backup-deploy 服务端管理脚本
-# 用法：./scripts/server.sh [命令]  或直接运行进入交互菜单
+# 用法：./scripts/server.sh [命令] [选项]  或直接运行进入交互菜单
+# 支持非交互式模式：通过命令行参数传入配置，跳过所有交互提示
 # =============================================================================
 set -euo pipefail
 
@@ -92,12 +93,24 @@ cmd_list_users() {
 }
 
 # 添加用户
+# 非交互式用法：server.sh add-user --username USER --password PASS
 cmd_add_user() {
+  local opt_username="" opt_password=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --username) opt_username="$2"; shift 2 ;;
+      --password) opt_password="$2"; shift 2 ;;
+      *) die "add-user: 未知参数 $1" ;;
+    esac
+  done
+
   check_running
   echo ""
   echo -e "${BOLD}── 添加用户 ─────────────────────────────${RESET}"
 
-  local username=""
+  # 用户名
+  local username="$opt_username"
   while [[ -z "$username" ]]; do
     read -rp "用户名: " username
   done
@@ -114,7 +127,15 @@ cmd_add_user() {
   if ! docker exec "$CONTAINER" test -f /data/.htpasswd 2>/dev/null; then
     htpasswd_flag="-Bc"
   fi
-  docker exec -it "$CONTAINER" htpasswd "$htpasswd_flag" /data/.htpasswd "$username"
+
+  if [[ -n "$opt_password" ]]; then
+    # 非交互：通过 stdin 传入密码，避免 -it
+    docker exec -i "$CONTAINER" \
+      sh -c "echo '${opt_password}' | htpasswd ${htpasswd_flag} -i /data/.htpasswd '${username}'"
+  else
+    # 交互：让 htpasswd 自己提示输入
+    docker exec -it "$CONTAINER" htpasswd "$htpasswd_flag" /data/.htpasswd "$username"
+  fi
 
   success "用户 '${username}' 已添加/更新"
 
@@ -124,11 +145,24 @@ cmd_add_user() {
 }
 
 # 删除用户
+# 非交互式用法：server.sh del-user --username USER [--yes]
 cmd_del_user() {
-  check_running
-  cmd_list_users
+  local opt_username="" opt_yes=0
 
-  local username=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --username) opt_username="$2"; shift 2 ;;
+      -y|--yes)   opt_yes=1;         shift   ;;
+      *) die "del-user: 未知参数 $1" ;;
+    esac
+  done
+
+  check_running
+
+  # 非交互时跳过用户列表展示
+  [[ -n "$opt_username" ]] || cmd_list_users
+
+  local username="$opt_username"
   while [[ -z "$username" ]]; do
     read -rp "请输入要删除的用户名: " username
   done
@@ -137,8 +171,10 @@ cmd_del_user() {
     die "用户 '${username}' 不存在"
   fi
 
-  read -rp "确认删除用户 '${username}'？[y/N] " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+  if [[ "$opt_yes" != "1" ]]; then
+    read -rp "确认删除用户 '${username}'？[y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+  fi
 
   docker exec "$CONTAINER" htpasswd -D /data/.htpasswd "$username"
   docker exec "$CONTAINER" sh -c 'kill -HUP 1' 2>/dev/null || true
@@ -159,8 +195,9 @@ cmd_disk() {
 # 帮助信息
 cmd_help() {
   echo ""
-  echo -e "${BOLD}用法: $0 [命令]${RESET}"
+  echo -e "${BOLD}用法: $0 <命令> [选项]${RESET}"
   echo ""
+  echo -e "${BOLD}命令：${RESET}"
   echo -e "  ${CYAN}up${RESET}           启动所有服务"
   echo -e "  ${CYAN}down${RESET}         停止所有服务"
   echo -e "  ${CYAN}restart${RESET}      重启 rest-server"
@@ -170,7 +207,17 @@ cmd_help() {
   echo -e "  ${CYAN}add-user${RESET}     添加/更新用户"
   echo -e "  ${CYAN}del-user${RESET}     删除用户"
   echo -e "  ${CYAN}disk${RESET}         查看磁盘占用"
-  echo -e "  ${CYAN}menu${RESET}         进入交互菜单"
+  echo -e "  ${CYAN}menu${RESET}         进入交互菜单（默认）"
+  echo -e "  ${CYAN}help, h${RESET}      显示此帮助"
+  echo ""
+  echo -e "${BOLD}非交互式选项：${RESET}"
+  echo -e "  ${BOLD}add-user${RESET}"
+  echo -e "    --username USER   用户名"
+  echo -e "    --password PASS   密码（省略则交互输入）"
+  echo ""
+  echo -e "  ${BOLD}del-user${RESET}"
+  echo -e "    --username USER   要删除的用户名"
+  echo -e "    -y, --yes         跳过确认提示"
   echo ""
 }
 
@@ -224,19 +271,22 @@ main_menu() {
 main() {
   check_deps
 
-  case "${1:-menu}" in
-    up)        cmd_up ;;
-    down)      cmd_down ;;
-    restart)   cmd_restart ;;
-    status)    cmd_status ;;
-    logs)      cmd_logs "${2:-50}" ;;
-    users)     cmd_list_users ;;
-    add-user)  cmd_add_user ;;
-    del-user)  cmd_del_user ;;
-    disk)      cmd_disk ;;
-    menu)      main_menu ;;
-    help|-h|--help) cmd_help ;;
-    *) error "未知命令: $1"; cmd_help; exit 1 ;;
+  local cmd="${1:-menu}"
+  [[ $# -gt 0 ]] && shift
+
+  case "$cmd" in
+    up)               cmd_up ;;
+    down)             cmd_down ;;
+    restart)          cmd_restart ;;
+    status)           cmd_status ;;
+    logs)             cmd_logs "${1:-50}" ;;
+    users)            cmd_list_users ;;
+    add-user)         cmd_add_user "$@" ;;
+    del-user)         cmd_del_user "$@" ;;
+    disk)             cmd_disk ;;
+    menu)             main_menu ;;
+    help|h|-h|--help) cmd_help ;;
+    *) error "未知命令: $cmd"; cmd_help; exit 1 ;;
   esac
 }
 

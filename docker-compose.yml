@@ -8,17 +8,26 @@ services:
         required: false
     environment:
       - PASSWORD_FILE=/data/.htpasswd
+      - OPTIONS=${OPTIONS:---prometheus}
     volumes:
       - ./data:/data
       - ./certs:/certs:ro
     ports:
       - "${RESTIC_PORT:-8000}:8000"
+    # 使用 shell 判断 TLS 是否启用，避免 https 时 wget http:// 失败
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/"]
+      test:
+        - "CMD-SHELL"
+        - |
+          if echo "$${OPTIONS}" | grep -q -- '--tls'; then
+            wget -qO- --no-check-certificate https://localhost:8000/ > /dev/null 2>&1
+          else
+            wget -qO- http://localhost:8000/ > /dev/null 2>&1
+          fi
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
+      start_period: 10s
     networks:
       - backup-net
 
@@ -33,11 +42,15 @@ services:
       - "--web.enable-lifecycle"
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # metrics_password 文件供 prometheus.yml basic_auth.password_file 使用
+      # 若 rest-server 启用了 --prometheus-no-auth，可删除此行及 prometheus.yml 中的 basic_auth 块
+      - ./config/metrics_password:/etc/prometheus/metrics_password:ro
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
-      - rest-server
+      rest-server:
+        condition: service_healthy
     networks:
       - backup-net
 
@@ -47,7 +60,7 @@ services:
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme_grafana}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3000}
     volumes:

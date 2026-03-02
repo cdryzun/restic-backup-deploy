@@ -7,7 +7,10 @@ scrape_configs:
     static_configs:
       - targets: ["rest-server:8000"]
     metrics_path: /metrics
-    # 若 rest-server 开启了 --prometheus-no-auth 则注释掉下面的认证块
+    # 若 rest-server 启动时带有 --prometheus-no-auth 参数，删除下面的 basic_auth 块
+    # 若启用了 --tls，还需添加 scheme: https 及 tls_config.insecure_skip_verify: true
     basic_auth:
       username: "metrics"
+      # 对应 docker-compose.yml 中挂载的 ./config/metrics_password 文件
+      # 文件内容为 Prometheus 抓取 rest-server /metrics 时使用的密码（明文）
       password_file: /etc/prometheus/metrics_password

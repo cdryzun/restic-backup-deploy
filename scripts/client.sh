@@ -2,6 +2,7 @@
 # =============================================================================
 # client.sh — restic 交互式备份客户端
 # 连接到 rest-server，提供初始化/备份/快照/恢复/清理 全功能交互界面
+# 支持非交互式模式：通过命令行参数或环境变量传入所有配置
 # =============================================================================
 set -euo pipefail
 
@@ -80,57 +81,117 @@ test_connection() {
   fi
 }
 
+# ── 非交互式输入辅助 ──────────────────────────────────────────────────────────
+# 用法: prompt_input <变量名引用> <提示文字> <默认值> [required]
+# 若变量已有值则跳过交互；required=1 时空值报错退出
+prompt_input() {
+  local -n _ref=$1
+  local prompt="$2"
+  local default="${3:-}"
+  local required="${4:-0}"
+
+  if [[ -n "${_ref:-}" ]]; then
+    return 0  # 已通过参数或环境变量提供，跳过
+  fi
+
+  local display_default=""
+  [[ -n "$default" ]] && display_default=" [${default}]"
+  read -rp "${prompt}${display_default}: " _ref
+  _ref="${_ref:-$default}"
+
+  if [[ "$required" == "1" && -z "${_ref:-}" ]]; then
+    die "必填项未提供: ${prompt}"
+  fi
+}
+
+# 静默密码输入，已有值则跳过
+prompt_password() {
+  local -n _ref=$1
+  local prompt="$2"
+  local required="${3:-0}"
+
+  if [[ -n "${_ref:-}" ]]; then
+    return 0
+  fi
+
+  read -rsp "${prompt}: " _ref
+  echo ""
+
+  if [[ "$required" == "1" && -z "${_ref:-}" ]]; then
+    die "必填项未提供: ${prompt}"
+  fi
+}
+
 # ── 菜单：初始化仓库 ──────────────────────────────────────────────────────────
+# 非交互式用法：
+#   client.sh init --server-url URL --username USER --http-password PASS \
+#                  [--repo-path PATH] --repo-password REPO_PASS [--yes]
 menu_init() {
+  # 解析本命令参数
+  local opt_server_url="" opt_username="" opt_http_password=""
+  local opt_repo_path="" opt_repo_password="" opt_yes=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --server-url)      opt_server_url="$2";      shift 2 ;;
+      --username)        opt_username="$2";         shift 2 ;;
+      --http-password)   opt_http_password="$2";   shift 2 ;;
+      --repo-path)       opt_repo_path="$2";        shift 2 ;;
+      --repo-password)   opt_repo_password="$2";   shift 2 ;;
+      -y|--yes)          opt_yes=1;                 shift   ;;
+      *) die "init: 未知参数 $1" ;;
+    esac
+  done
+
   step "初始化 restic 备份仓库"
   echo ""
   echo -e "${DIM}将在 rest-server 上创建新的加密备份仓库${RESET}"
   echo ""
 
   # 服务端地址
-  local default_url="${RESTIC_SERVER_URL:-http://localhost:8000}"
-  read -rp "服务端地址 [${default_url}]: " input_url
-  local server_url="${input_url:-$default_url}"
-  server_url="${server_url%/}"  # 去除末尾斜杠
+  local server_url="${opt_server_url:-${RESTIC_SERVER_URL:-}}"
+  prompt_input server_url "服务端地址" "http://localhost:8000" 1
+  server_url="${server_url%/}"
 
   # 认证用户名
-  local default_user="${RESTIC_USERNAME:-}"
-  read -rp "认证用户名${default_user:+ [${default_user}]}: " input_user
-  local username="${input_user:-$default_user}"
+  local username="${opt_username:-${RESTIC_USERNAME:-}}"
+  prompt_input username "认证用户名" "" 1
 
-  # 认证密码
-  local http_password=""
-  read -rsp "认证密码: " http_password
-  echo ""
+  # 认证密码（HTTP）
+  local http_password="$opt_http_password"
+  prompt_password http_password "认证密码（HTTP）" 1
 
-  # 仓库名（路径）
+  # 仓库路径
+  local repo_path="${opt_repo_path:-}"
   local default_repo="${username:-mybackup}"
-  read -rp "仓库路径（相对于服务端根目录）[${default_repo}]: " input_repo
-  local repo_path="${input_repo:-$default_repo}"
-  repo_path="${repo_path#/}"  # 去除开头斜杠
+  prompt_input repo_path "仓库路径（相对于服务端根目录）" "$default_repo" 1
+  repo_path="${repo_path#/}"
 
   # 构建仓库 URL
   local proto="${server_url%%://*}"
   local host_path="${server_url#*://}"
   local repo_url="${proto}://${username}:${http_password}@${host_path}/${repo_path}"
 
-  # 连通性测试（使用不含密码的 URL 避免在日志暴露）
+  # 连通性测试
   test_connection "$server_url" || return 1
 
   # 仓库加密密码
-  echo ""
-  warn "以下密码用于加密仓库数据，与服务端认证密码不同，请妥善保管！"
-  echo ""
-  local repo_password=""
-  local repo_password_confirm=""
-  while true; do
-    read -rsp "仓库加密密码: " repo_password
+  local repo_password="$opt_repo_password"
+  if [[ -z "$repo_password" ]]; then
     echo ""
-    read -rsp "确认加密密码: " repo_password_confirm
+    warn "以下密码用于加密仓库数据，与服务端认证密码不同，请妥善保管！"
     echo ""
-    [[ "$repo_password" == "$repo_password_confirm" ]] && break
-    error "两次输入不一致，请重试"
-  done
+    local repo_password_confirm=""
+    while true; do
+      read -rsp "仓库加密密码: " repo_password
+      echo ""
+      read -rsp "确认加密密码: " repo_password_confirm
+      echo ""
+      [[ "$repo_password" == "$repo_password_confirm" ]] && break
+      error "两次输入不一致，请重试"
+    done
+  fi
+  [[ -n "$repo_password" ]] || die "仓库加密密码不能为空"
 
   # 确认信息
   echo ""
@@ -140,45 +201,63 @@ menu_init() {
   echo -e "  仓库路径:   ${CYAN}/${repo_path}${RESET}"
   echo -e "  完整 URL:   ${CYAN}${proto}://${username}:***@${host_path}/${repo_path}${RESET}"
   echo ""
-  read -rp "确认初始化？[y/N] " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+
+  if [[ "$opt_yes" != "1" ]]; then
+    read -rp "确认初始化？[y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+  fi
 
   # 执行初始化
   echo ""
   info "正在初始化仓库..."
-  RESTIC_PASSWORD="$repo_password" RESTIC_REPOSITORY="$repo_url" \
-    restic init && {
-      success "仓库初始化成功！"
+  if RESTIC_PASSWORD="$repo_password" RESTIC_REPOSITORY="$repo_url" restic init; then
+    success "仓库初始化成功！"
 
-      # 保存配置
-      RESTIC_REPOSITORY="$repo_url"
-      RESTIC_PASSWORD="$repo_password"
-      RESTIC_SERVER_URL="$server_url"
-      RESTIC_USERNAME="$username"
-      export RESTIC_REPOSITORY RESTIC_PASSWORD
-      save_config
-    } || {
-      error "初始化失败，请检查服务端状态和认证信息"
-    }
+    # 保存配置
+    RESTIC_REPOSITORY="$repo_url"
+    RESTIC_PASSWORD="$repo_password"
+    RESTIC_SERVER_URL="$server_url"
+    RESTIC_USERNAME="$username"
+    export RESTIC_REPOSITORY RESTIC_PASSWORD
+    save_config
+  else
+    error "初始化失败，请检查服务端状态和认证信息"
+    return 1
+  fi
 }
 
 # ── 菜单：执行备份 ────────────────────────────────────────────────────────────
+# 非交互式用法：
+#   client.sh backup --path /data [--tag tag1,tag2] [--exclude '*.log,node_modules']
 menu_backup() {
+  local opt_path="" opt_tags="" opt_exclude=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --path)    opt_path="$2";    shift 2 ;;
+      --tag)     opt_tags="$2";    shift 2 ;;
+      --exclude) opt_exclude="$2"; shift 2 ;;
+      *) die "backup: 未知参数 $1" ;;
+    esac
+  done
+
   step "执行备份"
   check_config || return
 
-  # 选择备份路径
+  # 备份路径
+  local backup_path="$opt_path"
   local default_path="${LAST_BACKUP_PATH:-$HOME}"
-  read -rp "要备份的目录/文件 [${default_path}]: " input_path
-  local backup_path="${input_path:-$default_path}"
+  prompt_input backup_path "要备份的目录/文件" "$default_path" 1
 
   [[ -e "$backup_path" ]] || { error "路径不存在: $backup_path"; return 1; }
 
-  # 可选标签
-  read -rp "备份标签（可选，多个用逗号分隔）: " input_tags
+  # 标签（非交互时已通过参数提供，交互时提示）
+  local input_tags="$opt_tags"
+  [[ -n "$opt_path" ]] || prompt_input input_tags "备份标签（可选，多个用逗号分隔）" "" 0
 
-  # 可选排除规则
-  read -rp "排除规则（可选，如 '*.log,node_modules'）: " input_exclude
+  # 排除规则
+  local input_exclude="$opt_exclude"
+  [[ -n "$opt_path" ]] || prompt_input input_exclude "排除规则（可选，如 '*.log,node_modules'）" "" 0
 
   # 构建命令参数
   local args=("$backup_path")
@@ -206,15 +285,16 @@ menu_backup() {
   LAST_BACKUP_PATH="$backup_path"
   save_config
 
-  restic backup "${args[@]}" && {
+  if restic backup "${args[@]}"; then
     echo ""
     success "备份完成！"
     echo ""
     info "最新快照信息:"
-    restic snapshots --last 1
-  } || {
+    restic snapshots --latest 1
+  else
     error "备份失败"
-  }
+    return 1
+  fi
 }
 
 # ── 菜单：浏览快照 ────────────────────────────────────────────────────────────
@@ -223,35 +303,55 @@ menu_snapshots() {
   check_config || return
 
   echo ""
-  restic snapshots && echo "" || { error "获取快照列表失败"; return 1; }
-
-  echo -e "${DIM}提示：可使用快照 ID 前 8 位进行恢复${RESET}"
-  echo ""
+  if restic snapshots; then
+    echo ""
+    echo -e "${DIM}提示：可使用快照 ID 前 8 位进行恢复${RESET}"
+    echo ""
+  else
+    error "获取快照列表失败"
+    return 1
+  fi
 }
 
 # ── 菜单：恢复快照 ────────────────────────────────────────────────────────────
+# 非交互式用法：
+#   client.sh restore --snapshot SNAPSHOT_ID --target /path/to/restore \
+#                     [--include /path] [--yes]
 menu_restore() {
+  local opt_snapshot="" opt_target="" opt_include="" opt_yes=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --snapshot) opt_snapshot="$2"; shift 2 ;;
+      --target)   opt_target="$2";   shift 2 ;;
+      --include)  opt_include="$2";  shift 2 ;;
+      -y|--yes)   opt_yes=1;         shift   ;;
+      *) die "restore: 未知参数 $1" ;;
+    esac
+  done
+
   step "恢复快照"
   check_config || return
 
-  # 显示快照列表
-  info "当前快照列表："
-  echo ""
-  restic snapshots || { error "获取快照列表失败"; return 1; }
-  echo ""
+  # 非交互时跳过列表展示（已知快照 ID），交互时展示
+  if [[ -z "$opt_snapshot" ]]; then
+    info "当前快照列表："
+    echo ""
+    restic snapshots || { error "获取快照列表失败"; return 1; }
+    echo ""
+  fi
 
-  # 选择快照
-  local snapshot_id=""
-  read -rp "快照 ID（输入 'latest' 恢复最新）: " snapshot_id
-  [[ -n "$snapshot_id" ]] || { warn "已取消"; return; }
+  # 快照 ID
+  local snapshot_id="$opt_snapshot"
+  prompt_input snapshot_id "快照 ID（输入 'latest' 恢复最新）" "" 1
 
-  # 恢复目标目录
-  local default_target="/tmp/restic-restore"
-  read -rp "恢复到目录 [${default_target}]: " input_target
-  local target="${input_target:-$default_target}"
+  # 恢复目标
+  local target="$opt_target"
+  prompt_input target "恢复到目录" "/tmp/restic-restore" 1
 
-  # 可选：仅恢复部分路径
-  read -rp "仅恢复指定路径（可选，如 '/home/user/docs'）: " include_path
+  # 可选路径过滤
+  local include_path="$opt_include"
+  [[ -n "$opt_snapshot" ]] || prompt_input include_path "仅恢复指定路径（可选，如 '/home/user/docs'）" "" 0
 
   local args=("$snapshot_id" --target "$target")
   [[ -n "$include_path" ]] && args+=(--include "$include_path")
@@ -264,33 +364,68 @@ menu_restore() {
   [[ -n "$include_path" ]] && echo -e "  包含路径: ${CYAN}${include_path}${RESET}"
   echo ""
   warn "恢复操作会覆盖目标目录中的同名文件！"
-  read -rp "确认恢复？[y/N] " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+
+  if [[ "$opt_yes" != "1" ]]; then
+    read -rp "确认恢复？[y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+  fi
 
   echo ""
   info "开始恢复..."
   mkdir -p "$target"
-  restic restore "${args[@]}" && {
+  if restic restore "${args[@]}"; then
     success "恢复完成！文件已还原到: $target"
-  } || {
+  else
     error "恢复失败"
-  }
+    return 1
+  fi
 }
 
 # ── 菜单：清理快照 ────────────────────────────────────────────────────────────
+# 非交互式用法：
+#   client.sh forget [--keep-last N] [--keep-hourly N] [--keep-daily N] \
+#                    [--keep-weekly N] [--keep-monthly N] [--dry-run] [--yes]
 menu_forget() {
+  local opt_keep_last="" opt_keep_hourly="" opt_keep_daily=""
+  local opt_keep_weekly="" opt_keep_monthly="" opt_dry_run=0 opt_yes=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --keep-last)    opt_keep_last="$2";    shift 2 ;;
+      --keep-hourly)  opt_keep_hourly="$2";  shift 2 ;;
+      --keep-daily)   opt_keep_daily="$2";   shift 2 ;;
+      --keep-weekly)  opt_keep_weekly="$2";  shift 2 ;;
+      --keep-monthly) opt_keep_monthly="$2"; shift 2 ;;
+      --dry-run)      opt_dry_run=1;         shift   ;;
+      -y|--yes)       opt_yes=1;             shift   ;;
+      *) die "forget: 未知参数 $1" ;;
+    esac
+  done
+
   step "清理快照（forget & prune）"
   check_config || return
 
-  echo ""
-  echo -e "${BOLD}设置保留策略（保持为空则不限制）：${RESET}"
-  echo ""
+  # 非交互模式：参数已提供时直接使用，否则提示输入
+  local noninteractive=0
+  [[ -n "$opt_keep_last$opt_keep_hourly$opt_keep_daily$opt_keep_weekly$opt_keep_monthly" ]] \
+    && noninteractive=1
 
-  read -rp "保留最近 N 个快照: "        keep_last
-  read -rp "保留每小时最新快照 N 小时: " keep_hourly
-  read -rp "保留每天最新快照 N 天: "     keep_daily
-  read -rp "保留每周最新快照 N 周: "     keep_weekly
-  read -rp "保留每月最新快照 N 月: "     keep_monthly
+  local keep_last="$opt_keep_last"
+  local keep_hourly="$opt_keep_hourly"
+  local keep_daily="$opt_keep_daily"
+  local keep_weekly="$opt_keep_weekly"
+  local keep_monthly="$opt_keep_monthly"
+
+  if [[ "$noninteractive" == "0" ]]; then
+    echo ""
+    echo -e "${BOLD}设置保留策略（保持为空则不限制）：${RESET}"
+    echo ""
+    prompt_input keep_last    "保留最近 N 个快照" "" 0
+    prompt_input keep_hourly  "保留每小时最新快照 N 小时" "" 0
+    prompt_input keep_daily   "保留每天最新快照 N 天" "" 0
+    prompt_input keep_weekly  "保留每周最新快照 N 周" "" 0
+    prompt_input keep_monthly "保留每月最新快照 N 月" "" 0
+  fi
 
   local args=()
   [[ -n "$keep_last" ]]    && args+=(--keep-last    "$keep_last")
@@ -304,22 +439,32 @@ menu_forget() {
     return
   fi
 
+  # dry-run 预览
   echo ""
   info "预览将要删除的快照（dry-run）..."
   echo ""
   restic forget "${args[@]}" --dry-run
   echo ""
 
-  read -rp "确认执行清理并 prune 数据？[y/N] " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+  # --dry-run 标志：只预览不执行
+  if [[ "$opt_dry_run" == "1" ]]; then
+    info "dry-run 模式，未实际执行清理"
+    return
+  fi
+
+  if [[ "$opt_yes" != "1" ]]; then
+    read -rp "确认执行清理并 prune 数据？[y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { info "已取消"; return; }
+  fi
 
   echo ""
   info "执行清理..."
-  restic forget "${args[@]}" --prune && {
+  if restic forget "${args[@]}" --prune; then
     success "清理完成！"
-  } || {
+  else
     error "清理失败"
-  }
+    return 1
+  fi
 }
 
 # ── 菜单：检查仓库 ────────────────────────────────────────────────────────────
@@ -329,11 +474,12 @@ menu_check() {
 
   echo ""
   info "正在检查仓库完整性（此操作可能较慢）..."
-  restic check && {
+  if restic check; then
     success "仓库完整性检查通过！"
-  } || {
+  else
     error "仓库检查失败，可能存在数据损坏"
-  }
+    return 1
+  fi
 }
 
 # ── 菜单：显示配置 ────────────────────────────────────────────────────────────
@@ -395,6 +541,60 @@ menu_edit_config() {
   save_config
 }
 
+# ── 帮助信息 ──────────────────────────────────────────────────────────────────
+cmd_help() {
+  echo ""
+  echo -e "${BOLD}用法: $0 <命令> [选项]${RESET}"
+  echo ""
+  echo -e "${BOLD}命令：${RESET}"
+  echo -e "  ${CYAN}menu${RESET}       进入交互菜单（默认）"
+  echo -e "  ${CYAN}init${RESET}       初始化备份仓库"
+  echo -e "  ${CYAN}backup${RESET}     执行备份"
+  echo -e "  ${CYAN}snapshots${RESET}  浏览快照列表"
+  echo -e "  ${CYAN}restore${RESET}    恢复快照"
+  echo -e "  ${CYAN}forget${RESET}     清理旧快照（forget & prune）"
+  echo -e "  ${CYAN}check${RESET}      检查仓库完整性"
+  echo -e "  ${CYAN}config${RESET}     查看当前配置"
+  echo -e "  ${CYAN}help, h${RESET}    显示此帮助"
+  echo ""
+  echo -e "${BOLD}非交互式选项：${RESET}"
+  echo -e "  ${BOLD}init${RESET}"
+  echo -e "    --server-url    URL    服务端地址（默认 http://localhost:8000）"
+  echo -e "    --username      USER   HTTP 认证用户名"
+  echo -e "    --http-password PASS   HTTP 认证密码"
+  echo -e "    --repo-path     PATH   仓库路径（默认同用户名）"
+  echo -e "    --repo-password PASS   仓库加密密码"
+  echo -e "    -y, --yes              跳过确认提示"
+  echo ""
+  echo -e "  ${BOLD}backup${RESET}"
+  echo -e "    --path          PATH   备份目标路径（必填）"
+  echo -e "    --tag           TAGS   标签，逗号分隔（可选）"
+  echo -e "    --exclude       PATS   排除规则，逗号分隔（可选）"
+  echo ""
+  echo -e "  ${BOLD}restore${RESET}"
+  echo -e "    --snapshot      ID     快照 ID 或 'latest'"
+  echo -e "    --target        PATH   恢复目标目录"
+  echo -e "    --include       PATH   仅恢复指定路径（可选）"
+  echo -e "    -y, --yes              跳过确认提示"
+  echo ""
+  echo -e "  ${BOLD}forget${RESET}"
+  echo -e "    --keep-last     N      保留最近 N 个快照"
+  echo -e "    --keep-hourly   N      每小时保留 N 个"
+  echo -e "    --keep-daily    N      每天保留 N 个"
+  echo -e "    --keep-weekly   N      每周保留 N 个"
+  echo -e "    --keep-monthly  N      每月保留 N 个"
+  echo -e "    --dry-run              仅预览，不实际执行"
+  echo -e "    -y, --yes              跳过确认提示"
+  echo ""
+  echo -e "${BOLD}环境变量：${RESET}"
+  echo -e "  RESTIC_REPOSITORY    仓库 URL（优先于配置文件）"
+  echo -e "  RESTIC_PASSWORD      仓库加密密码"
+  echo -e "  RESTIC_CLIENT_CONFIG 配置文件路径（默认 ~/.restic-backup.conf）"
+  echo ""
+  echo -e "${DIM}配置文件: ${CONFIG_FILE}${RESET}"
+  echo ""
+}
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 show_banner() {
   clear
@@ -423,15 +623,15 @@ main_menu() {
 
     echo -e "${BOLD}  主菜单${RESET}"
     echo ""
-    echo "  1) 🚀  初始化备份仓库"
-    echo "  2) 💾  执行备份"
-    echo "  3) 📋  浏览快照列表"
-    echo "  4) 🔄  恢复快照"
-    echo "  5) 🧹  清理旧快照（forget & prune）"
-    echo "  6) 🔍  检查仓库完整性"
+    echo "  1) 初始化备份仓库"
+    echo "  2) 执行备份"
+    echo "  3) 浏览快照列表"
+    echo "  4) 恢复快照"
+    echo "  5) 清理旧快照（forget & prune）"
+    echo "  6) 检查仓库完整性"
     echo "  ─────────────────────────"
-    echo "  7) ⚙️   查看当前配置"
-    echo "  8) ✏️   修改连接配置"
+    echo "  7) 查看当前配置"
+    echo "  8) 修改连接配置"
     echo "  0) 退出"
     echo ""
     read -rp "  请输入选项 [0-8]: " choice
@@ -460,17 +660,22 @@ main() {
   check_deps
   load_config
 
-  case "${1:-menu}" in
-    menu)      main_menu ;;
-    init)      menu_init ;;
-    backup)    menu_backup ;;
-    snapshots) menu_snapshots ;;
-    restore)   menu_restore ;;
-    forget)    menu_forget ;;
-    check)     menu_check ;;
-    config)    menu_show_config ;;
+  local cmd="${1:-menu}"
+  [[ $# -gt 0 ]] && shift
+
+  case "$cmd" in
+    menu)             main_menu ;;
+    init)             menu_init "$@" ;;
+    backup)           menu_backup "$@" ;;
+    snapshots)        menu_snapshots ;;
+    restore)          menu_restore "$@" ;;
+    forget)           menu_forget "$@" ;;
+    check)            menu_check ;;
+    config)           menu_show_config ;;
+    help|h|-h|--help) cmd_help ;;
     *)
-      echo "用法: $0 [menu|init|backup|snapshots|restore|forget|check|config]"
+      error "未知命令: $cmd"
+      cmd_help
       exit 1
       ;;
   esac
