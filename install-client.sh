@@ -84,7 +84,7 @@ check_deps() {
 install_restic() {
   info "自动安装 restic..."
 
-  local os arch url latest_url
+  local os arch
 
   # 检测操作系统
   case "$(uname -s)" in
@@ -103,7 +103,7 @@ install_restic() {
 
   # 获取最新版本（兼容 macOS）
   info "获取最新版本..."
-  local version
+  local version latest_url="https://github.com/restic/restic/releases/latest"
   if [[ "$DOWNLOADER" == "curl" ]]; then
     version=$(curl -fsSL -o /dev/null -w "%{url_effective}" "$latest_url" | sed 's|.*/tag/v||')
   else
