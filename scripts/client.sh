@@ -241,7 +241,10 @@ menu_init() {
     echo ""
     echo -e "  若仓库已存在，是否直接使用该仓库并保存配置？"
     local use_existing="n"
-    if [[ "$opt_yes" != "1" ]]; then
+    if [[ "$opt_yes" == "1" ]]; then
+      # 非交互模式：仓库已存在时自动使用（调用方已确认）
+      use_existing="y"
+    else
       read -rp "  使用现有仓库？[y/N] " use_existing
     fi
     if [[ "$use_existing" =~ ^[Yy]$ ]]; then
