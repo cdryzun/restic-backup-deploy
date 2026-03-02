@@ -36,10 +36,26 @@ check_running() {
 
 # 启动服务
 cmd_up() {
-  info "启动所有服务..."
+  local with_monitoring=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --with-monitoring) with_monitoring=1; shift ;;
+      *) warn "up: 未知参数 $1，已忽略"; shift ;;
+    esac
+  done
+
   cd "$PROJECT_DIR"
   [[ -f .env ]] || { warn ".env 不存在，从 .env.example 复制"; cp .env.example .env; }
-  docker compose up -d
+
+  if [[ "$with_monitoring" == "1" ]]; then
+    info "启动所有服务（含监控）..."
+    docker compose --profile monitoring up -d
+  else
+    info "启动 rest-server（不含监控，使用 --with-monitoring 启动监控）..."
+    docker compose up -d
+  fi
+
   success "服务已启动"
   cmd_status
 }
@@ -198,17 +214,18 @@ cmd_help() {
   echo -e "${BOLD}用法: $0 <命令> [选项]${RESET}"
   echo ""
   echo -e "${BOLD}命令：${RESET}"
-  echo -e "  ${CYAN}up${RESET}           启动所有服务"
-  echo -e "  ${CYAN}down${RESET}         停止所有服务"
-  echo -e "  ${CYAN}restart${RESET}      重启 rest-server"
-  echo -e "  ${CYAN}status${RESET}       查看容器状态"
-  echo -e "  ${CYAN}logs [行数]${RESET}  查看日志（默认 50 行）"
-  echo -e "  ${CYAN}users${RESET}        列出所有用户"
-  echo -e "  ${CYAN}add-user${RESET}     添加/更新用户"
-  echo -e "  ${CYAN}del-user${RESET}     删除用户"
-  echo -e "  ${CYAN}disk${RESET}         查看磁盘占用"
-  echo -e "  ${CYAN}menu${RESET}         进入交互菜单（默认）"
-  echo -e "  ${CYAN}help, h${RESET}      显示此帮助"
+  echo -e "  ${CYAN}up${RESET}                  启动 rest-server（默认不启动监控）"
+  echo -e "  ${CYAN}up --with-monitoring${RESET} 启动所有服务（含 Prometheus + Grafana）"
+  echo -e "  ${CYAN}down${RESET}                停止所有服务"
+  echo -e "  ${CYAN}restart${RESET}             重启 rest-server"
+  echo -e "  ${CYAN}status${RESET}              查看容器状态"
+  echo -e "  ${CYAN}logs [行数]${RESET}         查看日志（默认 50 行）"
+  echo -e "  ${CYAN}users${RESET}               列出所有用户"
+  echo -e "  ${CYAN}add-user${RESET}            添加/更新用户"
+  echo -e "  ${CYAN}del-user${RESET}            删除用户"
+  echo -e "  ${CYAN}disk${RESET}                查看磁盘占用"
+  echo -e "  ${CYAN}menu${RESET}                进入交互菜单（默认）"
+  echo -e "  ${CYAN}help, h${RESET}             显示此帮助"
   echo ""
   echo -e "${BOLD}非交互式选项：${RESET}"
   echo -e "  ${BOLD}add-user${RESET}"
@@ -238,26 +255,28 @@ main_menu() {
     echo -e "${BOLD}请选择操作：${RESET}"
     echo ""
     echo "  1) 启动服务"
-    echo "  2) 停止服务"
-    echo "  3) 重启 rest-server"
-    echo "  4) 查看日志"
-    echo "  5) 用户列表"
-    echo "  6) 添加用户"
-    echo "  7) 删除用户"
-    echo "  8) 磁盘占用"
+    echo "  2) 启动服务（含监控）"
+    echo "  3) 停止服务"
+    echo "  4) 重启 rest-server"
+    echo "  5) 查看日志"
+    echo "  6) 用户列表"
+    echo "  7) 添加用户"
+    echo "  8) 删除用户"
+    echo "  9) 磁盘占用"
     echo "  0) 退出"
     echo ""
-    read -rp "请输入选项 [0-8]: " choice
+    read -rp "请输入选项 [0-9]: " choice
 
     case "$choice" in
       1) cmd_up ;;
-      2) cmd_down ;;
-      3) cmd_restart ;;
-      4) read -rp "显示最近多少行日志？[50]: " n; cmd_logs "${n:-50}" ;;
-      5) cmd_list_users ;;
-      6) cmd_add_user ;;
-      7) cmd_del_user ;;
-      8) cmd_disk ;;
+      2) cmd_up --with-monitoring ;;
+      3) cmd_down ;;
+      4) cmd_restart ;;
+      5) read -rp "显示最近多少行日志？[50]: " n; cmd_logs "${n:-50}" ;;
+      6) cmd_list_users ;;
+      7) cmd_add_user ;;
+      8) cmd_del_user ;;
+      9) cmd_disk ;;
       0) echo "再见！"; exit 0 ;;
       *) warn "无效选项" ;;
     esac
@@ -275,7 +294,7 @@ main() {
   [[ $# -gt 0 ]] && shift
 
   case "$cmd" in
-    up)               cmd_up ;;
+    up)               cmd_up "$@" ;;
     down)             cmd_down ;;
     restart)          cmd_restart ;;
     status)           cmd_status ;;

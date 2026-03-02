@@ -6,36 +6,39 @@
 
 ## 特性
 
-- **一键部署**：Docker Compose 启动 rest-server + Prometheus + Grafana 完整监控栈
+- **一键部署**：Docker Compose 启动 rest-server，可选 Prometheus + Grafana 监控栈
 - **交互式客户端**：引导式初始化、备份、恢复、清理全流程
 - **非交互式支持**：所有命令支持命令行参数，适配 CI/CD 自动化
 - **安全设计**：bcrypt 认证、TLS 支持、仓库加密
-- **可观测**：开箱即用的 Prometheus 指标 + Grafana 仪表板
+- **可观测**：可选的 Prometheus 指标 + Grafana 仪表板
 - **全流程验证**：内置测试脚本，GitHub Actions 自动化验证
 
 ## 快速开始
 
-### 服务端部署（3 步）
+### 服务端部署
 
 ```bash
 # 1. 复制并编辑配置
 cp .env.example .env
 vim .env
 
-# 2. 启动服务
+# 2. 启动备份服务
 ./scripts/server.sh up
 
-# 3. 添加备份用户
+# 3. （可选）启动监控服务
+# ./scripts/server.sh up --with-monitoring
+
+# 4. 添加备份用户
 ./scripts/server.sh add-user
 ```
 
 服务端口：
 
-| 服务         | 地址                     |
-|-------------|--------------------------|
-| rest-server | http://localhost:8000    |
-| Prometheus  | http://localhost:9090    |
-| Grafana     | http://localhost:3000    |
+| 服务         | 地址                     | 说明              |
+|-------------|--------------------------|-------------------|
+| rest-server | http://localhost:8000    | 备份服务（默认）   |
+| Prometheus  | http://localhost:9090    | 监控（可选）       |
+| Grafana     | http://localhost:3000    | 监控（可选）       |
 
 ### 客户端使用
 
@@ -98,22 +101,25 @@ restic-backup-deploy/
 | `GRAFANA_USER`     | `admin`             | Grafana 管理员用户名               |
 | `GRAFANA_PASSWORD` | `changeme_grafana`  | Grafana 管理员密码                 |
 
+> 监控相关变量（`PROMETHEUS_PORT`、`METRICS_PASSWORD`、`GRAFANA_*`）仅在启用监控服务时生效
+
 ## server.sh 命令参考
 
 ```bash
 ./scripts/server.sh <命令>
 
-  up           启动所有服务
-  down         停止所有服务
-  restart      重启 rest-server
-  status       查看容器状态
-  logs [N]     查看最近 N 行日志（默认 50）
-  users        列出所有认证用户
-  add-user     添加或更新用户（支持 --username --password）
-  del-user     删除用户（支持 --username --yes）
-  disk         查看数据目录磁盘占用
-  menu         进入交互菜单（默认）
-  help, h      显示帮助
+  up                  启动 rest-server（默认不启动监控）
+  up --with-monitoring 启动所有服务（含 Prometheus + Grafana）
+  down                停止所有服务
+  restart             重启 rest-server
+  status              查看容器状态
+  logs [N]            查看最近 N 行日志（默认 50）
+  users               列出所有认证用户
+  add-user            添加或更新用户（支持 --username --password）
+  del-user            删除用户（支持 --username --yes）
+  disk                查看数据目录磁盘占用
+  menu                进入交互菜单（默认）
+  help, h             显示帮助
 ```
 
 **非交互式示例：**
