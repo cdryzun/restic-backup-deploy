@@ -247,11 +247,25 @@ config_wizard() {
 
   echo ""
   info "测试连接..."
-  if curl -sf --max-time 5 -u "${username}:${http_password}" "${server_url%/}/${repo_path}/" -o /dev/null 2>&1; then
-    success "服务端连接正常"
-  else
-    warn "无法连接到服务端，请检查配置"
-  fi
+  # 只测试服务端是否可达，不测试仓库是否存在（初始化前仓库不存在）
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+    -u "${username}:${http_password}" "${server_url%/}/" 2>&1) || true
+
+  case "$http_code" in
+    200|401|403)
+      success "服务端连接正常 (HTTP $http_code)"
+      ;;
+    404)
+      success "服务端连接正常，仓库不存在（稍后将初始化）"
+      ;;
+    000)
+      warn "无法连接到服务端，请检查地址和网络"
+      ;;
+    *)
+      warn "服务端返回异常状态码: HTTP $http_code"
+      ;;
+  esac
 
   echo ""
   ask "是否初始化仓库？[Y/n]: " do_init
