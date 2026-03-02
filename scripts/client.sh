@@ -72,13 +72,22 @@ check_config() {
 test_connection() {
   local url="$1"
   info "测试服务端连通性..."
-  if curl -sf --max-time 5 "${url%/}/" -o /dev/null; then
-    success "服务端连接正常"
-    return 0
-  else
-    error "无法连接到 ${url}，请检查地址和网络"
-    return 1
-  fi
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -I "${url%/}/" 2>&1) || true
+  case "$http_code" in
+    200|401|403|404|405)
+      success "服务端连接正常 (HTTP $http_code)"
+      return 0
+      ;;
+    000)
+      error "无法连接到 ${url}，请检查地址和网络"
+      return 1
+      ;;
+    *)
+      warn "服务端返回状态码: HTTP $http_code"
+      return 0
+      ;;
+  esac
 }
 
 # ── 非交互式输入辅助 ──────────────────────────────────────────────────────────

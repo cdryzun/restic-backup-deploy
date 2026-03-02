@@ -285,13 +285,32 @@ config_wizard() {
     fi
 
     info "正在初始化仓库..."
-    "${INSTALL_PATH}" init \
+    if "${INSTALL_PATH}" init \
       --server-url "$server_url" \
       --username "$username" \
       --http-password "$http_password" \
       --repo-path "$repo_path" \
       --repo-password "$repo_password" \
-      --yes
+      --yes; then
+      # 初始化成功后引导执行首次备份
+      echo ""
+      ask "是否立即执行一次备份？[Y/n]: " do_backup
+      if [[ ! "$do_backup" =~ ^[Nn]$ ]]; then
+        echo ""
+        ask "请输入要备份的目录路径（如 /home/user 或 /data）: " backup_path
+        if [[ -n "$backup_path" && -e "$backup_path" ]]; then
+          info "开始备份 ${backup_path}..."
+          "${INSTALL_PATH}" backup --path "$backup_path"
+        else
+          warn "路径为空或不存在，跳过备份"
+          info "稍后可手动备份："
+          echo "  ${INSTALL_PATH} backup --path /your/data"
+        fi
+      else
+        info "稍后可手动备份："
+        echo "  ${INSTALL_PATH} backup --path /your/data"
+      fi
+    fi
   else
     info "稍后可手动初始化："
     echo "  ${INSTALL_PATH} init"
