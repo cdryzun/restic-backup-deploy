@@ -160,8 +160,7 @@ menu_init() {
 
   step "初始化 restic 备份仓库"
   echo ""
-  echo -e "${DIM}将在 rest-server 上创建新的加密备份仓库${RESET}"
-  echo -e "${DIM}最终仓库地址格式: rest:http://user:pass@host:port/repo${RESET}"
+  echo -e "${DIM}restic 将使用 REST 协议连接服务端${RESET}"
   echo ""
 
   # 服务端地址

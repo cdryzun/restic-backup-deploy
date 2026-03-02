@@ -223,9 +223,9 @@ config_wizard() {
   fi
 
   echo ""
-  echo -e "${DIM}最终仓库地址格式: rest:http://user:pass@host:port/repo${RESET}"
+  echo -e "${DIM}restic 将使用 REST 协议连接服务端${RESET}"
   echo ""
-  ask "服务端地址 (rest-server HTTP 地址，如 http://backup.example.com:8000): " server_url
+  ask "服务端地址 (如 http://backup.example.com:8000): " server_url
   ask "用户名: " username
 
   # HTTP 密码隐藏输入
