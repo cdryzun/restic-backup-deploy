@@ -26,11 +26,11 @@ ask() {
   local var="$2"
 
   if [[ -t 0 ]]; then
-    # 标准终端输入
-    read -rp "$prompt" "$var"
+    # 标准终端输入（-e 启用 readline，支持退格/方向键）
+    read -e -rp "$prompt" "$var"
   else
     # 管道执行时从 /dev/tty 读取
-    read -rp "$prompt" "$var" </dev/tty
+    read -e -rp "$prompt" "$var" </dev/tty
   fi
 }
 

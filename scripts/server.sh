@@ -144,14 +144,26 @@ cmd_add_user() {
     htpasswd_flag="-Bc"
   fi
 
-  if [[ -n "$opt_password" ]]; then
-    # 非交互：通过 stdin 传入密码，避免 -it
-    docker exec -i "$CONTAINER" \
-      sh -c "echo '${opt_password}' | htpasswd ${htpasswd_flag} -i /data/.htpasswd '${username}'"
-  else
-    # 交互：让 htpasswd 自己提示输入
-    docker exec -it "$CONTAINER" htpasswd "$htpasswd_flag" /data/.htpasswd "$username"
+  # 密码输入
+  local password="$opt_password"
+  if [[ -z "$password" ]]; then
+    while true; do
+      read -s -rp "密码: " password
+      echo ""
+      local password_confirm
+      read -s -rp "确认密码: " password_confirm
+      echo ""
+      if [[ "$password" == "$password_confirm" ]]; then
+        break
+      else
+        error "密码不匹配，请重新输入"
+      fi
+    done
   fi
+
+  # 通过 stdin 传入密码，避免 -it 依赖
+  docker exec -i "$CONTAINER" \
+    sh -c "echo '${password}' | htpasswd ${htpasswd_flag} -i /data/.htpasswd '${username}'"
 
   success "用户 '${username}' 已添加/更新"
 
