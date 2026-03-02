@@ -236,28 +236,16 @@ config_wizard() {
 
   ask "仓库名称 (如 myrepo): " repo_path
 
-  # 仓库加密密码隐藏输入
-  echo -n "仓库加密密码: "
-  if [[ -t 0 ]]; then
-    read -e -s repo_password
-  else
-    read -e -s repo_password </dev/tty
-  fi
-  echo ""
-
   echo ""
   info "测试连接..."
-  # 只测试服务端是否可达，不测试仓库是否存在（初始化前仓库不存在）
+  # 测试服务端连通性（HEAD 请求到根路径）
   local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-    -u "${username}:${http_password}" "${server_url%/}/" 2>&1) || true
+    -u "${username}:${http_password}" --head "${server_url%/}/" 2>&1) || true
 
   case "$http_code" in
-    200|401|403)
+    200|401|403|404|405)
       success "服务端连接正常 (HTTP $http_code)"
-      ;;
-    404)
-      success "服务端连接正常，仓库不存在（稍后将初始化）"
       ;;
     000)
       warn "无法连接到服务端，请检查地址和网络"
@@ -270,6 +258,33 @@ config_wizard() {
   echo ""
   ask "是否初始化仓库？[Y/n]: " do_init
   if [[ ! "$do_init" =~ ^[Nn]$ ]]; then
+    echo ""
+    info "设置仓库加密密码（请牢记，丢失无法恢复数据）"
+    echo -n "仓库加密密码: "
+    if [[ -t 0 ]]; then
+      read -e -s repo_password
+    else
+      read -e -s repo_password </dev/tty
+    fi
+    echo ""
+
+    echo -n "确认密码: "
+    local repo_password_confirm
+    if [[ -t 0 ]]; then
+      read -e -s repo_password_confirm
+    else
+      read -e -s repo_password_confirm </dev/tty
+    fi
+    echo ""
+
+    if [[ "$repo_password" != "$repo_password_confirm" ]]; then
+      error "密码不匹配，已取消初始化"
+      info "稍后可手动初始化："
+      echo "  ${INSTALL_PATH} init"
+      return
+    fi
+
+    info "正在初始化仓库..."
     "${INSTALL_PATH}" init \
       --server-url "$server_url" \
       --username "$username" \
@@ -277,6 +292,9 @@ config_wizard() {
       --repo-path "$repo_path" \
       --repo-password "$repo_password" \
       --yes
+  else
+    info "稍后可手动初始化："
+    echo "  ${INSTALL_PATH} init"
   fi
 }
 
