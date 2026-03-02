@@ -195,7 +195,8 @@ download_script() {
   info "下载 client.sh..."
 
   local tmp_file="/tmp/restic-backup-client.sh"
-  download "${BASE_URL}/scripts/client.sh" "$tmp_file"
+  # 添加时间戳参数绕过 CDN 缓存
+  download "${BASE_URL}/scripts/client.sh?v=$(date +%s)" "$tmp_file"
 
   if [[ "$NEED_SUDO" == "1" ]]; then
     sudo mv "$tmp_file" "$INSTALL_PATH"

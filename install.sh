@@ -118,18 +118,21 @@ download_files() {
   info "下载必要文件..."
   cd "$install_dir"
 
+  # 添加时间戳参数绕过 CDN 缓存
+  local _ts="?v=$(date +%s)"
+
   # 核心文件
-  download "${BASE_URL}/docker-compose.yml" "docker-compose.yml"
-  download "${BASE_URL}/.env.example" ".env.example"
-  download "${BASE_URL}/.gitignore" ".gitignore"
+  download "${BASE_URL}/docker-compose.yml${_ts}" "docker-compose.yml"
+  download "${BASE_URL}/.env.example${_ts}" ".env.example"
+  download "${BASE_URL}/.gitignore${_ts}" ".gitignore"
 
   # 脚本
-  download "${BASE_URL}/scripts/server.sh" "scripts/server.sh"
+  download "${BASE_URL}/scripts/server.sh${_ts}" "scripts/server.sh"
   chmod +x scripts/server.sh
 
   # 配置文件
-  download "${BASE_URL}/config/prometheus.yml" "config/prometheus.yml"
-  download "${BASE_URL}/config/metrics_password" "config/metrics_password"
+  download "${BASE_URL}/config/prometheus.yml${_ts}" "config/prometheus.yml"
+  download "${BASE_URL}/config/metrics_password${_ts}" "config/metrics_password"
 
   success "文件下载完成"
 }
