@@ -315,6 +315,7 @@ config_wizard() {
       warn "仓库初始化失败（可能已存在同名仓库）"
       info "若仓库已存在，可直接使用："
       echo "  ${INSTALL_PATH} init  # 重新初始化或选择已有仓库"
+    fi
   else
     info "稍后可手动初始化："
     echo "  ${INSTALL_PATH} init"
