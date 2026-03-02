@@ -1,0 +1,66 @@
+services:
+  rest-server:
+    image: restic/rest-server:latest
+    container_name: restic-rest-server
+    restart: unless-stopped
+    environment:
+      - OPTIONS=--prometheus${TLS_ENABLED:+ --tls} ${EXTRA_OPTIONS:-}
+      - PASSWORD_FILE=/data/.htpasswd
+    volumes:
+      - ./data:/data
+      - ./certs:/certs:ro
+    ports:
+      - "${RESTIC_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - backup-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: restic-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - rest-server
+    networks:
+      - backup-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: restic-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3000}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - backup-net
+
+networks:
+  backup-net:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:

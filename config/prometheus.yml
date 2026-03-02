@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: "rest-server"
+    static_configs:
+      - targets: ["rest-server:8000"]
+    metrics_path: /metrics
+    # 若 rest-server 开启了 --prometheus-no-auth 则注释掉下面的认证块
+    basic_auth:
+      username: "metrics"
+      password_file: /etc/prometheus/metrics_password
